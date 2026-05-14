@@ -1499,7 +1499,7 @@
     var FB      = 'https://kitobxonpg-default-rtdb.firebaseio.com';
     var SB_URL  = 'https://sstfjuooxlgjaulzomcx.supabase.co';
     var SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdGZqdW9veGxnamF1bHpvbWN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NDk2NDUsImV4cCI6MjA5NDMyNTY0NX0.2xdOFJ27jKktnlcnsITDDXpepIiCDdQLc0avTJb0lOA';
-    var SB_BUCKET = 'kitobxon';
+    var SB_BUCKET = 'kutubxon';
 
     // Footer yilini dinamik qo'yish
     document.getElementById('footer-year').textContent = new Date().getFullYear();
@@ -1529,11 +1529,16 @@
       var folder   = file.type === 'application/pdf' ? 'pdfs' : 'covers';
       var path     = folder + '/' + ts + '_' + safeName;
 
+      // 50MB limit
+      if (file.size > 50 * 1024 * 1024) {
+        return Promise.reject(new Error('Fayl juda katta! Maksimal: 50MB'));
+      }
+
       return fetch(SB_URL + '/storage/v1/object/' + SB_BUCKET + '/' + path, {
         method:  'POST',
         headers: {
           'Authorization': 'Bearer ' + SB_KEY,
-          'Content-Type':  file.type,
+          'Content-Type':  file.type || 'application/octet-stream',
           'x-upsert':      'true'
         },
         body: file
@@ -1541,13 +1546,27 @@
       .then(function(r) {
         if (!r.ok) {
           return r.text().then(function(t) {
-            throw new Error('Supabase xato: ' + t);
+            var status = r.status;
+            var detail = '';
+            try { detail = JSON.parse(t).message || t; } catch(e) { detail = t; }
+            if (status === 400) throw new Error('Bucket topilmadi. Supabase Storage-da "' + SB_BUCKET + '" bucket borligini tekshiring.');
+            if (status === 401) throw new Error("API kalit xato yoki muddati o'tgan.");
+            if (status === 403) throw new Error("Ruxsat yo'q (403). Supabase: Storage → Policies → INSERT ruxsatini qo'shing.");
+            if (status === 404) throw new Error('Bucket "' + SB_BUCKET + '" mavjud emas. Supabase Storage-da yarating.');
+            if (status === 413) throw new Error('Fayl juda katta. Kichikroq fayl tanlang.');
+            throw new Error('Server xatosi (' + status + '): ' + detail);
           });
         }
         return r.json();
       })
       .then(function() {
         return SB_URL + '/storage/v1/object/public/' + SB_BUCKET + '/' + path;
+      })
+      .catch(function(err) {
+        if (err instanceof TypeError) {
+          throw new Error("Internet aloqasi yo'q yoki Supabase URL xato.");
+        }
+        throw err;
       });
     }
 
