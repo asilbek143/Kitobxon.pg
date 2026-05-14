@@ -907,7 +907,6 @@ footer {
       <h2 class="section-title">Kitob <em>Qo'shish</em></h2>
       <div class="section-line"></div>
     </div>
-
     <div id="upload-section">
       <div class="form-grid">
         <div class="form-group">
@@ -980,7 +979,7 @@ footer {
   <!-- FOOTER -->
   <footer>
     <div class="footer-logo">Kitobxon<span style="color:var(--cyan)">.pg</span></div>
-    <p class="footer-text" style="margin-top:0.5rem">© 2026 Kitobxon.pg — Barcha huquqlar himoyalangan</p>
+    <p class="footer-text" style="margin-top:0.5rem">© 2024 Kitobxon.pg — Barcha huquqlar himoyalangan</p>
     <p class="footer-text" style="margin-top:0.25rem;color:rgba(232,220,200,0.25)">O'zbek Raqamli Kutubxonasi</p>
   </footer>
 </div>
@@ -1120,70 +1119,80 @@ function drawBG(){
 }
 drawBG();
 
+// ===================== CONFIG =====================
+const FB_DB = 'https://kitobxonpg-default-rtdb.firebaseio.com';
+
+// ✅ UPLOADCARE — ulangan va tayyor
+const UPLOADCARE_KEY = '17a96974ac80d5c8a96a';
+
+// ---------- Realtime DB helpers ----------
+async function dbGet(path){
+  const r = await fetch(`${FB_DB}/${path}.json`);
+  return r.ok ? r.json() : null;
+}
+async function dbPush(path, data){
+  const r = await fetch(`${FB_DB}/${path}.json`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  return r.ok ? r.json() : null;
+}
+async function dbSet(path, data){
+  const r = await fetch(`${FB_DB}/${path}.json`, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  return r.ok ? r.json() : null;
+}
+
+// ---------- Uploadcare upload — BEPUL ----------
+async function uploadcareUpload(file){
+  const fd = new FormData();
+  fd.append('UPLOADCARE_PUB_KEY', UPLOADCARE_KEY);
+  fd.append('UPLOADCARE_STORE', '1');
+  fd.append('file', file);
+
+  const r = await fetch('https://upload.uploadcare.com/base/', {
+    method: 'POST',
+    body: fd
+  });
+  if(!r.ok){
+    const err = await r.text();
+    throw new Error('Uploadcare xato: ' + err);
+  }
+  const json = await r.json();
+  if(!json.file) throw new Error('Uploadcare: fayl UUID qaytmadi');
+  // CDN URL — rasm va PDF uchun ham ishlaydi
+  return `https://ucarecdn.com/${json.file}/`;
+}
+
 // ===================== LOADER =====================
 setTimeout(()=>{ document.getElementById('loader').classList.add('hidden'); },3000);
 
-// ===================== BOOKS DATA =====================
-let booksData = [
-  {
-    id:1, title:"O'tgan Kunlar", author:"Abdulla Qodiriy", genre:"Roman",
-    rating:4.9, pages:368, date:"2024-01-15",
-    desc:"O'zbek adabiyotining durdonasi. Otabek va Kumushning go'zal va fojiali muhabbat qissasi.",
-    fullDesc:"O'tgan kunlar — Abdulla Qodiriy tomonidan yozilgan o'zbek adabiyotining birinchi klassik romani. Asar 1926-yilda to'liq nashr etilgan bo'lib, XIX asr oxiri — XX asr boshlaridagi Toshkent va Marg'ilon hayotini tasvirlaydi. Otabek va Kumush o'rtasidagi muhabbat qissasi orqali muallif o'sha davr jamiyatining ijtimoiy, oilaviy va siyosiy muammolarini yorqin aks ettirgan.",
-    emoji:"📜",
-    coverColor:"linear-gradient(135deg,#2d1b0e,#1a0f05)",
-    pdfUrl:null
-  },
-  {
-    id:2, title:"Sarob", author:"Abdulla Qodiriy", genre:"Roman",
-    rating:4.7, pages:292, date:"2024-02-08",
-    desc:"Yusufbek hoji va uning oilasi hayotini tasvirlovchi chuqur psixologik roman.",
-    fullDesc:"Sarob romani Abdulla Qodiriyning ikkinchi yirik asari bo'lib, 1930-yilda nashr etilgan. Asar Yusufbek hoji va uning atrofidagi insonlar taqdirini tasvirlaydi. Romantik tuyg'ular va hayotiy haqiqatlar o'rtasidagi ziddiyat romanning asosiy mavzusini tashkil etadi.",
-    emoji:"🌊",
-    coverColor:"linear-gradient(135deg,#0e1d2d,#05101a)",
-    pdfUrl:null
-  },
-  {
-    id:3, title:"Shum Bola", author:"G'afur G'ulom", genre:"Bolalar adabiyoti",
-    rating:4.8, pages:176, date:"2024-01-22",
-    desc:"Bolalikning beg'ubor olamini tasvirlovchi quvnoq va ta'sirchan hikoya.",
-    fullDesc:"Shum Bola — G'afur G'ulomning mashhur qissasi bo'lib, muallif o'z bolalik xotiralaridan ilhomlangan holda yozgan. Asar Toshkentning eski mahallasida o'sgan bir bolaning sarguzashtlarini tasvirlaydi. Kitob o'zbek bolalar adabiyotining eng sevimli asarlaridan biri hisoblanadi.",
-    emoji:"👦",
-    coverColor:"linear-gradient(135deg,#1a2d0e,#0f1a05)",
-    pdfUrl:null
-  },
-  {
-    id:4, title:"Hamza", author:"Hamza Hakimzoda Niyoziy", genre:"She'riyat",
-    rating:4.6, pages:240, date:"2024-03-05",
-    desc:"O'zbek ma'rifatchiligining buyuk vakili she'rlari va asarlari to'plami.",
-    fullDesc:"Hamza Hakimzoda Niyoziy — o'zbek adabiyoti va dramaturgiyasining buyuk namoyandasi. Bu to'plam uning she'rlari, dramalar va publitsistik asarlarini o'z ichiga oladi. Ma'rifatparvar shoirning islohotchi g'oyalari va ijtimoiy fikrlari asarlar orqali yaqqol ko'rinadi.",
-    emoji:"✍️",
-    coverColor:"linear-gradient(135deg,#2d0e2d,#1a051a)",
-    pdfUrl:null
-  },
-  {
-    id:5, title:"Temur Tuzuklari", author:"Amir Temur", genre:"Tarix",
-    rating:4.9, pages:312, date:"2024-02-14",
-    desc:"Sohibqiron Amir Temurning davlat boshqaruvi va harbiy strategiya haqidagi merosidir.",
-    fullDesc:"Temur Tuzuklari — XIV asrda yashab o'tgan buyuk davlat arbobi va sarkarda Amir Temurning (1336-1405) davlat boshqaruvi, harbiy san'at va siyosat haqidagi o'gitlari to'plami. Bu asar Temur tomonidan o'zi yozilgan yoki uning ko'rsatmasi bilan tuzilgan deb hisoblanadi.",
-    emoji:"⚔️",
-    coverColor:"linear-gradient(135deg,#2d1a0e,#1a0e05)",
-    pdfUrl:null
-  },
-  {
-    id:6, title:"Boburnoma", author:"Zahiriddin Muhammad Bobur", genre:"Tarix",
-    rating:5.0, pages:504, date:"2024-01-30",
-    desc:"O'rta asr O'rta Osiyo va Hindistonini tasvirlovchi noyob tarixiy xotiralar.",
-    fullDesc:"Boburnoma — Zahiriddin Muhammad Bobur (1483-1530) tomonidan yozilgan tarixiy va badiiy nasr namunasi. Bu asar Boburning hayoti, safarnomalari, urushlar va tinchlik davrlarini o'z ichiga oladi. O'zbek tilida yozilgan bu asar jahon adabiyotining durdonalaridan biri sanaladi.",
-    emoji:"📚",
-    coverColor:"linear-gradient(135deg,#2d2a0e,#1a180a)",
-    pdfUrl:null
-  }
-];
+// ===================== DATA =====================
+let booksData = [];
+let fbBooks   = {};
 
-let uploadedCoverDataUrl = null;
-let uploadedPdfBlob = null;
-let uploadedPdfName = null;
+// Firebase dan kitoblarni yukla — seed yo'q, faqat real ma'lumotlar
+async function loadBooksFromFirebase(){
+  try {
+    const snap = await dbGet('books');
+    fbBooks = snap || {};
+    booksData = Object.entries(fbBooks).map(([key,val])=>({...val, fbKey:key}));
+    // Yangi qo'shilgan avval chiqsin
+    booksData.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+    renderBooks(booksData);
+    document.getElementById('stat1').textContent = booksData.length;
+  } catch(e){
+    console.error(e);
+    booksData = [];
+    renderBooks(booksData);
+  }
+}
+
+
+let uploadedCoverFile = null;
+let uploadedPdfFile   = null;
 
 // ===================== RENDER BOOKS =====================
 function renderStars(r){
@@ -1197,18 +1206,23 @@ function renderStars(r){
   return s;
 }
 
+function cardCover(b){
+  if(b.coverUrl) return `<img src="${b.coverUrl}" class="book-cover" alt="${b.title}" onerror="this.style.display='none'">`;
+  if(b.coverImg) return `<img src="${b.coverImg}" class="book-cover" alt="${b.title}">`;
+  return `<div class="book-cover-placeholder" style="background:${b.coverColor||'var(--glass)'}">${b.emoji||'📖'}</div>`;
+}
+
 function renderBooks(data){
   const grid = document.getElementById('booksGrid');
   if(!data.length){
     grid.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Hech qanday kitob topilmadi</div></div>`;
     return;
   }
+  const key = b => b.fbKey || b.id;
   grid.innerHTML = data.map((b,i)=>`
-    <div class="book-card" style="animation-delay:${i*0.08}s" onclick="openModal(${b.id})">
+    <div class="book-card" style="animation-delay:${i*0.08}s" onclick="openModal('${key(b)}')">
       <div style="position:relative">
-        ${b.coverImg
-          ? `<img src="${b.coverImg}" class="book-cover" alt="${b.title}">`
-          : `<div class="book-cover-placeholder" style="background:${b.coverColor||'var(--glass)'}">${b.emoji||'📖'}</div>`}
+        ${cardCover(b)}
         <div class="book-cover-overlay"></div>
       </div>
       <div class="book-card-body">
@@ -1220,10 +1234,10 @@ function renderBooks(data){
         </div>
         <div class="book-desc">${b.desc}</div>
         <div class="book-footer">
-          <span class="book-pages">📄 ${b.pages} bet</span>
-          <span class="book-date">🗓 ${b.date}</span>
+          <span class="book-pages">📄 ${b.pages||'—'} bet</span>
+          <span class="book-date">🗓 ${b.date||''}</span>
         </div>
-        <button class="dl-btn" onclick="event.stopPropagation();downloadBook(${b.id})">⬇ PDF Yuklab Olish</button>
+        <button class="dl-btn" onclick="event.stopPropagation();downloadBook('${key(b)}')">⬇ PDF Yuklab Olish</button>
       </div>
     </div>
   `).join('');
@@ -1242,30 +1256,33 @@ function filterBooks(){
 }
 
 // ===================== MODAL =====================
-function openModal(id){
-  const b = booksData.find(x=>x.id===id);
+function openModal(keyId){
+  const b = booksData.find(x=>(x.fbKey||x.id)==keyId);
   if(!b) return;
-  const dl = b.pdfUrl
-    ? `<a href="${b.pdfUrl}" download="${b.title}.pdf" class="modal-dl-btn">⬇ PDF Yuklab Olish</a>`
-    : `<button class="modal-dl-btn" onclick="downloadBook(${b.id})">⬇ PDF Yuklab Olish</button>`;
+  const hasPdf = b.pdfUrl;
+  const dl = hasPdf
+    ? `<a href="${b.pdfUrl}" target="_blank" download="${b.title}.pdf" class="modal-dl-btn">⬇ PDF Yuklab Olish</a>`
+    : `<button class="modal-dl-btn" style="opacity:0.5;cursor:default">📭 PDF mavjud emas</button>`;
+  const cover = b.coverUrl
+    ? `<img src="${b.coverUrl}" class="modal-cover" alt="${b.title}">`
+    : b.coverImg
+      ? `<img src="${b.coverImg}" class="modal-cover" alt="${b.title}">`
+      : `<div class="modal-cover-placeholder" style="background:${b.coverColor||'var(--glass)'}">${b.emoji||'📖'}</div>`;
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-grid">
-      <div>
-        ${b.coverImg
-          ? `<img src="${b.coverImg}" class="modal-cover" alt="${b.title}">`
-          : `<div class="modal-cover-placeholder" style="background:${b.coverColor||'var(--glass)'}">${b.emoji||'📖'}</div>`}
-      </div>
+      <div>${cover}</div>
       <div class="modal-info">
         <div class="modal-tag">${b.genre}</div>
         <div class="modal-title">${b.title}</div>
         <div class="modal-author">✍ ${b.author}</div>
         <div class="modal-stats">
           <div><div class="modal-stat-label">Reyting</div><div class="modal-stat-value" style="color:var(--gold)">${b.rating} ★</div></div>
-          <div><div class="modal-stat-label">Sahifalar</div><div class="modal-stat-value">${b.pages}</div></div>
-          <div><div class="modal-stat-label">Sana</div><div class="modal-stat-value" style="font-size:0.85rem">${b.date}</div></div>
+          <div><div class="modal-stat-label">Sahifalar</div><div class="modal-stat-value">${b.pages||'—'}</div></div>
+          <div><div class="modal-stat-label">Sana</div><div class="modal-stat-value" style="font-size:0.85rem">${b.date||'—'}</div></div>
         </div>
         <div class="modal-desc-title">Kitob Haqida</div>
         <div class="modal-desc">${b.fullDesc||b.desc}</div>
+        ${b.lang ? `<div style="margin-bottom:1rem;font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--text-dim)">🌐 Til: ${b.lang}</div>` : ''}
         ${dl}
       </div>
     </div>
@@ -1281,76 +1298,104 @@ function closeModal(e){
 }
 
 // ===================== DOWNLOAD =====================
-function downloadBook(id){
-  const b = booksData.find(x=>x.id===id);
+function downloadBook(keyId){
+  const b = booksData.find(x=>(x.fbKey||x.id)==keyId);
   if(!b) return;
-  if(b.pdfBlob){
-    const url = URL.createObjectURL(b.pdfBlob);
-    const a = document.createElement('a'); a.href=url; a.download=b.title+'.pdf'; a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
-    showToast('📥 '+b.title+' yuklab olindi!');
-    return;
-  }
-  if(b.pdfUrl){ window.open(b.pdfUrl,'_blank'); return; }
+  if(b.pdfUrl){ window.open(b.pdfUrl,'_blank'); showToast('📥 '+b.title+' yuklab olinmoqda...'); return; }
   showToast('⚠️ Bu kitobning PDF fayli mavjud emas.');
 }
 
 // ===================== UPLOAD =====================
 function handleCoverFile(inp){
-  const f = inp.files[0];
-  if(!f) return;
-  document.getElementById('coverName').textContent = '✔ '+f.name;
-  const reader = new FileReader();
-  reader.onload = e => { uploadedCoverDataUrl = e.target.result; };
-  reader.readAsDataURL(f);
+  const f=inp.files[0]; if(!f) return;
+  uploadedCoverFile=f;
+  document.getElementById('coverName').textContent='✔ '+f.name;
 }
 function handlePdfFile(inp){
-  const f = inp.files[0];
-  if(!f) return;
-  document.getElementById('pdfName').textContent = '✔ '+f.name;
-  uploadedPdfBlob = f;
-  uploadedPdfName = f.name;
+  const f=inp.files[0]; if(!f) return;
+  uploadedPdfFile=f;
+  document.getElementById('pdfName').textContent='✔ '+f.name;
 }
 
-function submitBook(){
-  const title = document.getElementById('inp-title').value.trim();
+async function submitBook(){
+  const title  = document.getElementById('inp-title').value.trim();
   const author = document.getElementById('inp-author').value.trim();
-  const genre = document.getElementById('inp-genre').value;
-  const desc = document.getElementById('inp-desc').value.trim();
-  const pages = parseInt(document.getElementById('inp-pages').value)||0;
-  const lang = document.getElementById('inp-lang').value;
+  const genre  = document.getElementById('inp-genre').value;
+  const desc   = document.getElementById('inp-desc').value.trim();
+  const pages  = parseInt(document.getElementById('inp-pages').value)||0;
+  const lang   = document.getElementById('inp-lang').value;
   const rating = parseFloat(document.getElementById('inp-rating').value)||4.0;
 
   if(!title||!author||!genre||!desc){ showToast('⚠️ Iltimos, barcha majburiy maydonlarni to\'ldiring.'); return; }
 
+  const btn = document.querySelector('.submit-btn');
+  btn.textContent='⏳ Saqlanmoqda...'; btn.disabled=true;
+
   const newBook = {
-    id: Date.now(),
-    title, author, genre, desc,
-    fullDesc: desc, pages: pages||200,
-    date: new Date().toISOString().slice(0,10),
-    lang, rating: Math.min(5,Math.max(1,rating)),
+    title, author, genre, desc, fullDesc:desc,
+    pages:pages||200,
+    date:new Date().toISOString().slice(0,10),
+    lang, rating:Math.min(5,Math.max(1,rating)),
     emoji:'📖',
     coverColor:'linear-gradient(135deg,#1a1a1a,#0a0a0a)',
-    pdfUrl: null
+    coverUrl:null, pdfUrl:null
   };
-  if(uploadedCoverDataUrl) newBook.coverImg = uploadedCoverDataUrl;
-  if(uploadedPdfBlob) newBook.pdfBlob = uploadedPdfBlob;
 
-  booksData.unshift(newBook);
-  renderBooks(booksData);
-  document.getElementById('stat1').textContent = booksData.length;
+  try {
+    const ts = Date.now();
 
-  // Reset
-  ['inp-title','inp-author','inp-desc','inp-pages','inp-rating'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('inp-genre').value='';
-  document.getElementById('coverName').textContent='';
-  document.getElementById('pdfName').textContent='';
-  uploadedCoverDataUrl=null; uploadedPdfBlob=null; uploadedPdfName=null;
-  document.getElementById('inp-cover').value='';
-  document.getElementById('inp-pdf').value='';
+    // 1) Muqova rasmini Uploadcare ga yuklash
+    if(uploadedCoverFile){
+      btn.textContent='🖼️ Muqova yuklanmoqda...';
+      try {
+        newBook.coverUrl = await uploadcareUpload(uploadedCoverFile);
+      } catch(e){
+        console.warn('Cover upload failed', e);
+        showToast('⚠️ Muqova yuklanmadi: ' + e.message);
+      }
+    }
 
-  showToast('✅ "'+title+'" muvaffaqiyatli qo\'shildi!');
-  scrollToBooks();
+    // 2) PDF ni Uploadcare ga yuklash
+    if(uploadedPdfFile){
+      btn.textContent='📄 PDF yuklanmoqda...';
+      try {
+        newBook.pdfUrl = await uploadcareUpload(uploadedPdfFile);
+      } catch(e){
+        console.warn('PDF upload failed', e);
+        showToast('⚠️ PDF yuklanmadi: ' + e.message);
+      }
+    }
+
+    // 3) Metadata ni Realtime DB ga saqlash
+    btn.textContent='💾 Ma\'lumot saqlanmoqda...';
+    const pushed = await dbPush('books', newBook);
+    if(pushed && pushed.name){
+      newBook.fbKey = pushed.name;
+      fbBooks[pushed.name] = newBook;
+    }
+
+    // 4) Local state yangilash
+    booksData.unshift(newBook);
+    renderBooks(booksData);
+    document.getElementById('stat1').textContent = booksData.length;
+
+    // Reset form
+    ['inp-title','inp-author','inp-desc','inp-pages','inp-rating'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('inp-genre').value='';
+    document.getElementById('coverName').textContent='';
+    document.getElementById('pdfName').textContent='';
+    document.getElementById('inp-cover').value='';
+    document.getElementById('inp-pdf').value='';
+    uploadedCoverFile=null; uploadedPdfFile=null;
+
+    showToast('✅ "'+title+'" Firebase ga muvaffaqiyatli saqlandi!');
+    scrollToBooks();
+  } catch(err){
+    console.error(err);
+    showToast('❌ Xatolik: '+err.message);
+  } finally {
+    btn.textContent='✦ Kitobni Qo\'shish'; btn.disabled=false;
+  }
 }
 
 // ===================== OPEN LIBRARY =====================
@@ -1382,10 +1427,9 @@ function openLibrary(){
     const mc = document.getElementById('main-content');
     mc.classList.add('visible');
     requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ mc.classList.add('fadeIn'); }); });
-    renderBooks(booksData);
-    document.getElementById('stat1').textContent = booksData.length;
     document.getElementById('scrollHint').style.display='flex';
     window.scrollTo({top:0,behavior:'auto'});
+    loadBooksFromFirebase();
   },1600);
 }
 
@@ -1444,4 +1488,4 @@ function animateCounter(el, target, duration=1500){
 }
 </script>
 </body>
-</html>
+      </html>
