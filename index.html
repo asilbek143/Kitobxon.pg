@@ -1494,12 +1494,9 @@
   <script>
 
     // ============================================================
-    // CONFIG — Firebase & Supabase
+    // CONFIG — Firebase (faqat Firebase, Supabase yo'q)
     // ============================================================
-    var FB      = 'https://kitobxonpg-default-rtdb.firebaseio.com';
-    var SB_URL  = 'https://sstfjuooxlgjaulzomcx.supabase.co';
-    var SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdGZqdW9veGxnamF1bHpvbWN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NDk2NDUsImV4cCI6MjA5NDMyNTY0NX0.2xdOFJ27jKktnlcnsITDDXpepIiCDdQLc0avTJb0lOA';
-    var SB_BUCKET = 'kitobxon';
+    var FB = 'https://kitobxonpg-default-rtdb.firebaseio.com';
 
     // Footer yilini dinamik qo'yish
     document.getElementById('footer-year').textContent = new Date().getFullYear();
@@ -1521,34 +1518,31 @@
     }
 
     // ============================================================
-    // SUPABASE STORAGE
+    // FAYL → BASE64 (Firebase ga saqlash uchun)
     // ============================================================
-    function sbUpload(file) {
-      var ts       = Date.now();
-      var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      var folder   = file.type === 'application/pdf' ? 'pdfs' : 'covers';
-      var path     = folder + '/' + ts + '_' + safeName;
+    function fileToBase64(file) {
+      // Hajm tekshiruvi: rasm 3MB, PDF 5MB
+      var maxSize = file.type === 'application/pdf' ? 5 * 1024 * 1024 : 3 * 1024 * 1024;
+      if (file.size > maxSize) {
+        var limit = file.type === 'application/pdf' ? '5MB' : '3MB';
+        return Promise.reject(new Error('Fayl juda katta! Maksimal: ' + limit));
+      }
 
-      return fetch(SB_URL + '/storage/v1/object/' + SB_BUCKET + '/' + path, {
-        method:  'POST',
-        headers: {
-          'Authorization': 'Bearer ' + SB_KEY,
-          'Content-Type':  file.type,
-          'x-upsert':      'true'
-        },
-        body: file
-      })
-      .then(function(r) {
-        if (!r.ok) {
-          return r.text().then(function(t) {
-            throw new Error('Supabase xato: ' + t);
-          });
-        }
-        return r.json();
-      })
-      .then(function() {
-        return SB_URL + '/storage/v1/object/public/' + SB_BUCKET + '/' + path;
+      return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload  = function(e) { resolve(e.target.result); };
+        reader.onerror = function()  { reject(new Error("Faylni o'qishda xatolik")); };
+        reader.readAsDataURL(file);
       });
+    }
+
+    // Firebase ga fayl saqlash (base64 string sifatida)
+    function dbSaveFile(path, base64Data) {
+      return fetch(FB + '/' + path + '.json', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(base64Data)
+      }).then(function(r) { return r.json(); });
     }
 
     // ============================================================
@@ -1978,8 +1972,38 @@
 
     function forceDl(e, url, title) {
       if (e && e.preventDefault) e.preventDefault();
-      showToast('📥 PDF yuklab olinmoqda...');
 
+      // Base64 PDF bo'lsa — to'g'ridan to'g'ri yuklab olish
+      if (url && url.startsWith('data:')) {
+        showToast('📥 PDF yuklab olinmoqda...');
+        var a = document.createElement('a');
+        a.href     = url;
+        a.download = (title || 'kitob') + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() { document.body.removeChild(a); }, 500);
+        return;
+      }
+
+      // Firebase URL bo'lsa — fetch qilib yuklaymiz
+      if (url && url.indexOf('firebase') >= 0) {
+        showToast('📥 PDF yuklab olinmoqda...');
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(b64) {
+            var a = document.createElement('a');
+            a.href     = b64;
+            a.download = (title || 'kitob') + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function() { document.body.removeChild(a); }, 500);
+          })
+          .catch(function() { showToast("❌ PDF yuklab bo'lmadi"); });
+        return;
+      }
+
+      // Oddiy URL
+      showToast('📥 PDF yuklab olinmoqda...');
       var dlUrl = url.indexOf('?') >= 0 ? url + '&download=' : url + '?download=';
       var a     = document.createElement('a');
       a.href     = dlUrl;
@@ -2044,30 +2068,61 @@
 
       var p = Promise.resolve();
 
-      // Upload cover image if provided
+      // Muqova rasmi — Base64 ga o'tkazib Firebase ga saqlash
       if (coverFile) {
         btn.textContent = '🖼️ Muqova yuklanmoqda...';
         p = p.then(function() {
-          return sbUpload(coverFile)
-            .then(function(url) { book.coverUrl = url; })
+          return fileToBase64(coverFile)
+            .then(function(b64) {
+              // Base64 ni alohida node ga saqlash (kitob id bo'lgach yangilaymiz)
+              book.coverUrl = b64; // vaqtincha xotirada, keyin alohida saqlanadi
+            })
             .catch(function(e) { showToast('⚠️ Muqova yuklanmadi: ' + e.message); });
         });
       }
 
-      // Upload PDF if provided
+      // PDF — Base64 ga o'tkazib Firebase ga saqlash
       if (pdfFile) {
         p = p.then(function() {
           btn.textContent = '📄 PDF yuklanmoqda...';
-          return sbUpload(pdfFile)
-            .then(function(url) { book.pdfUrl = url; })
+          return fileToBase64(pdfFile)
+            .then(function(b64) {
+              book.pdfData = b64; // base64 PDF data
+              book.pdfUrl  = 'base64'; // marker — keyinchalik ishlatiladi
+            })
             .catch(function(e) { showToast('⚠️ PDF yuklanmadi: ' + e.message); });
         });
       }
 
-      // Save to Firebase
+      // Firebase ga saqlash
       p.then(function() {
         btn.textContent = '💾 Saqlanmoqda...';
-        return dbPush('books', book);
+        // PDF data ni kitobdan ajratib saqlash (katta ma'lumot)
+        var pdfData  = book.pdfData  || null;
+        var coverB64 = (book.coverUrl && book.coverUrl.startsWith('data:')) ? book.coverUrl : null;
+
+        // Kitob ma'lumotida faqat URL/flag saqlash
+        if (pdfData)  { book.pdfUrl  = 'firebase'; }
+        if (coverB64) { book.coverUrl = 'firebase'; }
+        delete book.pdfData;
+
+        return dbPush('books', book).then(function(res) {
+          var key = res && res.name;
+          if (!key) throw new Error("Firebase ga saqlanmadi");
+
+          // Fayl ma'lumotlarini alohida saqlaymiz
+          var saves = [];
+          if (pdfData)  saves.push(dbSaveFile('files/' + key + '/pdf',   pdfData));
+          if (coverB64) saves.push(dbSaveFile('files/' + key + '/cover', coverB64));
+
+          return Promise.all(saves).then(function() {
+            // URL larni yangilaymiz
+            if (pdfData)  book.pdfUrl  = FB + '/files/' + key + '/pdf.json';
+            if (coverB64) book.coverUrl = coverB64; // xotirada saqlab qolamiz (sahifa uchun)
+            book.fbKey = key;
+            return res;
+          });
+        });
       }).then(function(res) {
         if (res && res.name) book.fbKey = res.name;
         booksData.unshift(book);
