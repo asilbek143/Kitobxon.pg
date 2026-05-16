@@ -1963,7 +1963,9 @@
       }
       if (!b) return;
 
-      if (b.pdfUrl) {
+      if (b.pdfUrl && b.pdfUrl !== 'base64' && b.pdfUrl !== 'firebase') {
+        forceDl({ preventDefault: function() {} }, b.pdfUrl, b.title);
+      } else if (b.pdfUrl && b.pdfUrl.startsWith('data:')) {
         forceDl({ preventDefault: function() {} }, b.pdfUrl, b.title);
       } else {
         showToast('⚠️ PDF fayl mavjud emas');
@@ -1972,11 +1974,11 @@
 
     function forceDl(e, url, title) {
       if (e && e.preventDefault) e.preventDefault();
+      showToast('📥 PDF yuklab olinmoqda...');
 
       // Base64 PDF bo'lsa — to'g'ridan to'g'ri yuklab olish
       if (url && url.startsWith('data:')) {
-        showToast('📥 PDF yuklab olinmoqda...');
-        var a = document.createElement('a');
+        var a      = document.createElement('a');
         a.href     = url;
         a.download = (title || 'kitob') + '.pdf';
         document.body.appendChild(a);
@@ -1985,28 +1987,9 @@
         return;
       }
 
-      // Firebase URL bo'lsa — fetch qilib yuklaymiz
-      if (url && url.indexOf('firebase') >= 0) {
-        showToast('📥 PDF yuklab olinmoqda...');
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(b64) {
-            var a = document.createElement('a');
-            a.href     = b64;
-            a.download = (title || 'kitob') + '.pdf';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(function() { document.body.removeChild(a); }, 500);
-          })
-          .catch(function() { showToast("❌ PDF yuklab bo'lmadi"); });
-        return;
-      }
-
       // Oddiy URL
-      showToast('📥 PDF yuklab olinmoqda...');
-      var dlUrl = url.indexOf('?') >= 0 ? url + '&download=' : url + '?download=';
-      var a     = document.createElement('a');
-      a.href     = dlUrl;
+      var a      = document.createElement('a');
+      a.href     = url;
       a.download = (title || 'kitob') + '.pdf';
       a.target   = '_blank';
       document.body.appendChild(a);
@@ -2097,32 +2080,14 @@
       // Firebase ga saqlash
       p.then(function() {
         btn.textContent = '💾 Saqlanmoqda...';
-        // PDF data ni kitobdan ajratib saqlash (katta ma'lumot)
-        var pdfData  = book.pdfData  || null;
-        var coverB64 = (book.coverUrl && book.coverUrl.startsWith('data:')) ? book.coverUrl : null;
 
-        // Kitob ma'lumotida faqat URL/flag saqlash
-        if (pdfData)  { book.pdfUrl  = 'firebase'; }
-        if (coverB64) { book.coverUrl = 'firebase'; }
-        delete book.pdfData;
+        // PDF base64 ni pdfUrl ga o'tkazamiz (to'g'ridan-to'g'ri)
+        if (book.pdfData) {
+          book.pdfUrl = book.pdfData; // base64 string sifatida saqlaymiz
+          delete book.pdfData;
+        }
 
-        return dbPush('books', book).then(function(res) {
-          var key = res && res.name;
-          if (!key) throw new Error("Firebase ga saqlanmadi");
-
-          // Fayl ma'lumotlarini alohida saqlaymiz
-          var saves = [];
-          if (pdfData)  saves.push(dbSaveFile('files/' + key + '/pdf',   pdfData));
-          if (coverB64) saves.push(dbSaveFile('files/' + key + '/cover', coverB64));
-
-          return Promise.all(saves).then(function() {
-            // URL larni yangilaymiz
-            if (pdfData)  book.pdfUrl  = FB + '/files/' + key + '/pdf.json';
-            if (coverB64) book.coverUrl = coverB64; // xotirada saqlab qolamiz (sahifa uchun)
-            book.fbKey = key;
-            return res;
-          });
-        });
+        return dbPush('books', book);
       }).then(function(res) {
         if (res && res.name) book.fbKey = res.name;
         booksData.unshift(book);
