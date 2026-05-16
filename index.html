@@ -1494,9 +1494,12 @@
   <script>
 
     // ============================================================
-    // CONFIG — Firebase (faqat Firebase, Supabase yo'q)
+    // CONFIG
     // ============================================================
-    var FB = 'https://kitobxonpg-default-rtdb.firebaseio.com';
+    var FB         = 'https://kitobxonpg-default-rtdb.firebaseio.com';
+    var TG_TOKEN   = '8783545916:AAH8QghzHkeMK8O3mr-3npTbzgdxHUM0u64';
+    var TG_CHAT_ID = '5648807599';
+    var TG_API     = 'https://api.telegram.org/bot' + TG_TOKEN;
 
     // Footer yilini dinamik qo'yish
     document.getElementById('footer-year').textContent = new Date().getFullYear();
@@ -1518,31 +1521,60 @@
     }
 
     // ============================================================
-    // FAYL → BASE64 (Firebase ga saqlash uchun)
+    // TELEGRAM — FAYL YUKLASH
     // ============================================================
-    function fileToBase64(file) {
-      // Hajm tekshiruvi: rasm 3MB, PDF 5MB
-      var maxSize = file.type === 'application/pdf' ? 5 * 1024 * 1024 : 3 * 1024 * 1024;
+    function tgUpload(file) {
+      var maxSize = 2 * 1024 * 1024 * 1024; // 2GB
       if (file.size > maxSize) {
-        var limit = file.type === 'application/pdf' ? '5MB' : '3MB';
-        return Promise.reject(new Error('Fayl juda katta! Maksimal: ' + limit));
+        return Promise.reject(new Error('Fayl juda katta! Maksimal: 2GB'));
       }
 
-      return new Promise(function(resolve, reject) {
-        var reader = new FileReader();
-        reader.onload  = function(e) { resolve(e.target.result); };
-        reader.onerror = function()  { reject(new Error("Faylni o'qishda xatolik")); };
-        reader.readAsDataURL(file);
-      });
-    }
+      var isPdf   = file.type === 'application/pdf';
+      var method  = isPdf ? 'sendDocument' : 'sendPhoto';
+      var field   = isPdf ? 'document'     : 'photo';
 
-    // Firebase ga fayl saqlash (base64 string sifatida)
-    function dbSaveFile(path, base64Data) {
-      return fetch(FB + '/' + path + '.json', {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(base64Data)
-      }).then(function(r) { return r.json(); });
+      var form = new FormData();
+      form.append('chat_id', TG_CHAT_ID);
+      form.append(field, file, file.name);
+      if (isPdf) {
+        form.append('caption', '📚 Kitobxon.pg — ' + file.name);
+      }
+
+      return fetch(TG_API + '/' + method, {
+        method: 'POST',
+        body:   form
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok) {
+          throw new Error('Telegram xato: ' + (data.description || JSON.stringify(data)));
+        }
+
+        // File ID ni olish
+        var result  = data.result;
+        var fileId  = '';
+
+        if (isPdf) {
+          fileId = result.document && result.document.file_id;
+        } else {
+          // Rasmlardan eng kattasini olish
+          var photos = result.photo;
+          if (photos && photos.length) {
+            fileId = photos[photos.length - 1].file_id;
+          }
+        }
+
+        if (!fileId) throw new Error('File ID olinmadi');
+
+        // File ID dan yuklab olish URL ini olish
+        return fetch(TG_API + '/getFile?file_id=' + fileId)
+          .then(function(r) { return r.json(); })
+          .then(function(fd) {
+            if (!fd.ok) throw new Error('File path olinmadi');
+            var filePath = fd.result.file_path;
+            return 'https://api.telegram.org/file/bot' + TG_TOKEN + '/' + filePath;
+          });
+      });
     }
 
     // ============================================================
@@ -1963,9 +1995,7 @@
       }
       if (!b) return;
 
-      if (b.pdfUrl && b.pdfUrl !== 'base64' && b.pdfUrl !== 'firebase') {
-        forceDl({ preventDefault: function() {} }, b.pdfUrl, b.title);
-      } else if (b.pdfUrl && b.pdfUrl.startsWith('data:')) {
+      if (b.pdfUrl) {
         forceDl({ preventDefault: function() {} }, b.pdfUrl, b.title);
       } else {
         showToast('⚠️ PDF fayl mavjud emas');
@@ -1975,26 +2005,8 @@
     function forceDl(e, url, title) {
       if (e && e.preventDefault) e.preventDefault();
       showToast('📥 PDF yuklab olinmoqda...');
-
-      // Base64 PDF bo'lsa — to'g'ridan to'g'ri yuklab olish
-      if (url && url.startsWith('data:')) {
-        var a      = document.createElement('a');
-        a.href     = url;
-        a.download = (title || 'kitob') + '.pdf';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(function() { document.body.removeChild(a); }, 500);
-        return;
-      }
-
-      // Oddiy URL
-      var a      = document.createElement('a');
-      a.href     = url;
-      a.download = (title || 'kitob') + '.pdf';
-      a.target   = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function() { document.body.removeChild(a); }, 1000);
+      // Telegram yoki boshqa URL — to'g'ridan-to'g'ri ochamiz
+      window.open(url, '_blank');
     }
 
     // ============================================================
@@ -2051,28 +2063,22 @@
 
       var p = Promise.resolve();
 
-      // Muqova rasmi — Base64 ga o'tkazib Firebase ga saqlash
+      // Muqova rasmi — Telegram ga yuklash
       if (coverFile) {
         btn.textContent = '🖼️ Muqova yuklanmoqda...';
         p = p.then(function() {
-          return fileToBase64(coverFile)
-            .then(function(b64) {
-              // Base64 ni alohida node ga saqlash (kitob id bo'lgach yangilaymiz)
-              book.coverUrl = b64; // vaqtincha xotirada, keyin alohida saqlanadi
-            })
+          return tgUpload(coverFile)
+            .then(function(url) { book.coverUrl = url; })
             .catch(function(e) { showToast('⚠️ Muqova yuklanmadi: ' + e.message); });
         });
       }
 
-      // PDF — Base64 ga o'tkazib Firebase ga saqlash
+      // PDF — Telegram ga yuklash
       if (pdfFile) {
         p = p.then(function() {
           btn.textContent = '📄 PDF yuklanmoqda...';
-          return fileToBase64(pdfFile)
-            .then(function(b64) {
-              book.pdfData = b64; // base64 PDF data
-              book.pdfUrl  = 'base64'; // marker — keyinchalik ishlatiladi
-            })
+          return tgUpload(pdfFile)
+            .then(function(url) { book.pdfUrl = url; })
             .catch(function(e) { showToast('⚠️ PDF yuklanmadi: ' + e.message); });
         });
       }
@@ -2080,13 +2086,6 @@
       // Firebase ga saqlash
       p.then(function() {
         btn.textContent = '💾 Saqlanmoqda...';
-
-        // PDF base64 ni pdfUrl ga o'tkazamiz (to'g'ridan-to'g'ri)
-        if (book.pdfData) {
-          book.pdfUrl = book.pdfData; // base64 string sifatida saqlaymiz
-          delete book.pdfData;
-        }
-
         return dbPush('books', book);
       }).then(function(res) {
         if (res && res.name) book.fbKey = res.name;
